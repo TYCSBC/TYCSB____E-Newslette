@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>取消訂閱｜桃園社企中心電子報</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #d9dee7;
+      --primary: #1f6feb;
+      --primary-dark: #185abc;
+      --danger: #b42318;
+      --success: #0f766e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    main {
+      width: min(100%, 520px);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 32px;
+      box-shadow: 0 16px 40px rgba(31, 41, 55, 0.08);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    input {
+      width: 100%;
+      height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 14px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+
+    input:focus {
+      outline: 3px solid rgba(31, 111, 235, 0.18);
+      border-color: var(--primary);
+    }
+
+    button {
+      width: 100%;
+      height: 46px;
+      margin-top: 18px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+    }
+
+    button:disabled {
+      background: #aeb8c8;
+      cursor: not-allowed;
+    }
+
+    .status {
+      min-height: 26px;
+      margin-top: 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .status.success {
+      color: var(--success);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>取消訂閱</h1>
+    <p>請確認要取消訂閱的電子郵件。若電子郵件有誤，可以直接修改後送出。</p>
+
+    <form id="unsubscribeForm">
+      <label for="email">電子郵件</label>
+      <input id="email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required>
+      <button id="submitButton" type="submit" disabled>取消訂閱</button>
+      <div id="status" class="status">正在確認電子郵件請稍後</div>
+    </form>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { getFirestore, doc, getDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "__FIREBASE_API_KEY__",
+      authDomain: "__FIREBASE_AUTH_DOMAIN__",
+      projectId: "__FIREBASE_PROJECT_ID__",
+      storageBucket: "__FIREBASE_STORAGE_BUCKET__",
+      messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+      appId: "__FIREBASE_APP_ID__",
+    };
+
+    const recipientCollection = "__RECIPIENT_COLLECTION__";
+    const form = document.getElementById("unsubscribeForm");
+    const emailInput = document.getElementById("email");
+    const submitButton = document.getElementById("submitButton");
+    const statusBox = document.getElementById("status");
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token") || "";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    let recipientRef = null;
+
+    function setStatus(message, type) {
+      statusBox.textContent = message;
+      statusBox.className = "status" + (type ? " " + type : "");
+    }
+
+    function normalizeEmail(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    async function loadRecipient() {
+      if (!token) {
+        setStatus("請從電子報中的取消訂閱連結進入。", "error");
+        return;
+      }
+
+      try {
+        recipientRef = doc(db, recipientCollection, token);
+        const snapshot = await getDoc(recipientRef);
+
+        if (!snapshot.exists()) {
+          setStatus("找不到這個退訂連結，請確認連結是否完整。", "error");
+          return;
+        }
+
+        const data = snapshot.data();
+        emailInput.value = data.email || "";
+
+        if (data.status === "unsubscribed") {
+          submitButton.disabled = true;
+          setStatus("這個電子郵件已經取消訂閱。", "success");
+          return;
+        }
+
+        submitButton.disabled = false;
+        setStatus("已確認電子郵件，可以修改後送出。");
+      } catch (error) {
+        console.error(error);
+        setStatus("目前無法確認電子郵件，請稍後再試。", "error");
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const email = normalizeEmail(emailInput.value);
+      if (!email) {
+        setStatus("請輸入電子郵件。", "error");
+        return;
+      }
+
+      if (!recipientRef) {
+        setStatus("退訂連結尚未確認，請重新開啟連結。", "error");
+        return;
+      }
+
+      submitButton.disabled = true;
+      setStatus("正在處理退訂請稍後");
+
+      try {
+        await updateDoc(recipientRef, {
+          email,
+          status: "unsubscribed",
+          unsubscribedAt: serverTimestamp(),
+        });
+
+        setStatus("已完成取消訂閱。", "success");
+      } catch (error) {
+        console.error(error);
+        submitButton.disabled = false;
+        setStatus("退訂失敗，請稍後再試。", "error");
+      }
+    });
+
+    loadRecipient();
+  </script>
+</body>
+</html>
