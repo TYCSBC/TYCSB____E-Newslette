@@ -131,7 +131,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-    import { getFirestore, doc, getDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    import { getFirestore, addDoc, collection, doc, getDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "__FIREBASE_API_KEY__",
@@ -153,6 +153,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     let recipientRef = null;
+    let publicIp = "";
 
     function setStatus(message, type) {
       statusBox.textContent = message;
@@ -163,9 +164,39 @@
       return String(value || "").trim().toLowerCase();
     }
 
+    async function loadPublicIp() {
+      try {
+        const response = await fetch("https://api.ipify.org?format=json");
+        const data = await response.json();
+        publicIp = data && data.ip ? String(data.ip) : "";
+      } catch (error) {
+        publicIp = "";
+      }
+    }
+
+    async function recordUnsubscribeLog(action, details = {}) {
+      try {
+        await addDoc(collection(db, "adminLogs"), {
+          action,
+          createdAt: serverTimestamp(),
+          email: normalizeEmail(details.email || ""),
+          token: String(details.token || token || ""),
+          ip: publicIp,
+          userAgent: navigator.userAgent || "",
+          pageUrl: window.location.href,
+          errorMessage: String(details.errorMessage || ""),
+        });
+      } catch (error) {
+        console.warn("Unable to write unsubscribe log", error);
+      }
+    }
+
     async function loadRecipient() {
       if (!token) {
         setStatus("請從電子報中的取消訂閱連結進入。", "error");
+        recordUnsubscribeLog("public_unsubscribe_failed", {
+          errorMessage: "missing token",
+        });
         return;
       }
 
@@ -175,6 +206,10 @@
 
         if (!snapshot.exists()) {
           setStatus("找不到這個退訂連結，請確認連結是否完整。", "error");
+          recordUnsubscribeLog("public_unsubscribe_failed", {
+            token,
+            errorMessage: "document not found",
+          });
           return;
         }
 
@@ -184,6 +219,11 @@
         if (data.status === "unsubscribed") {
           submitButton.disabled = true;
           setStatus("這個電子郵件已經取消訂閱。", "success");
+          recordUnsubscribeLog("public_unsubscribe_failed", {
+            email: data.email || "",
+            token,
+            errorMessage: "already unsubscribed",
+          });
           return;
         }
 
@@ -192,6 +232,10 @@
       } catch (error) {
         console.error(error);
         setStatus("目前無法確認電子郵件，請稍後再試。", "error");
+        recordUnsubscribeLog("public_unsubscribe_failed", {
+          token,
+          errorMessage: error && error.message ? error.message : "load recipient failed",
+        });
       }
     }
 
@@ -220,13 +264,23 @@
         });
 
         setStatus("已完成取消訂閱。", "success");
+        recordUnsubscribeLog("public_unsubscribe_success", {
+          email,
+          token,
+        });
       } catch (error) {
         console.error(error);
         submitButton.disabled = false;
         setStatus("退訂失敗，請稍後再試。", "error");
+        recordUnsubscribeLog("public_unsubscribe_failed", {
+          email,
+          token,
+          errorMessage: error && error.message ? error.message : "unsubscribe update failed",
+        });
       }
     });
 
+    loadPublicIp();
     loadRecipient();
   </script>
 </body>
