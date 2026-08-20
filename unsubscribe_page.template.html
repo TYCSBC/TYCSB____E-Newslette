@@ -186,8 +186,10 @@
           pageUrl: window.location.href,
           errorMessage: String(details.errorMessage || ""),
         });
+        return true;
       } catch (error) {
         console.warn("Unable to write unsubscribe log", error);
+        return false;
       }
     }
 
@@ -263,16 +265,16 @@
           unsubscribedAt: serverTimestamp(),
         });
 
-        setStatus("已完成取消訂閱。", "success");
-        recordUnsubscribeLog("public_unsubscribe_success", {
+        const logged = await recordUnsubscribeLog("public_unsubscribe_success", {
           email,
           token,
         });
+        setStatus(logged ? "已完成取消訂閱。" : "已完成取消訂閱，但 Log 未寫入。", "success");
       } catch (error) {
         console.error(error);
         submitButton.disabled = false;
         setStatus("退訂失敗，請稍後再試。", "error");
-        recordUnsubscribeLog("public_unsubscribe_failed", {
+        await recordUnsubscribeLog("public_unsubscribe_failed", {
           email,
           token,
           errorMessage: error && error.message ? error.message : "unsubscribe update failed",
@@ -280,8 +282,7 @@
       }
     });
 
-    loadPublicIp();
-    loadRecipient();
+    loadPublicIp().finally(loadRecipient);
   </script>
 </body>
 </html>
