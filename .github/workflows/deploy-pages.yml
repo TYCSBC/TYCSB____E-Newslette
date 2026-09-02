@@ -48,6 +48,7 @@ jobs:
           find . -maxdepth 1 -type f \( -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.gif' -o -name '*.svg' -o -name '*.ico' \) \
             ! -name 'unsubscribe_page.template.html' \
             -exec cp '{}' _site/ \;
+            cp -R 2026_S3 _site/2026_S3
 
           cp unsubscribe_page.template.html _site/unsubscribe.html
 
